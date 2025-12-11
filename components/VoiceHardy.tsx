@@ -15,11 +15,22 @@ export const VoiceHardy: React.FC = () => {
   const [volume, setVolume] = useState(0); 
   const [isCameraOn, setIsCameraOn] = useState(false);
   
-  // Draggable State
-  const [position, setPosition] = useState({ x: 20, y: 80 });
+  // Draggable State (Using Left/Top coordinates)
+  const [position, setPosition] = useState(() => {
+    if (typeof window !== 'undefined') {
+        // Initial position: Bottom Right
+        return { x: window.innerWidth - 80, y: window.innerHeight - 150 };
+    }
+    return { x: 0, y: 0 };
+  });
+
   const [isDragging, setIsDragging] = useState(false);
-  const dragStartRef = useRef<{x: number, y: number} | null>(null);
   
+  // Refs for Drag Logic
+  const dragStartPosRef = useRef<{x: number, y: number} | null>(null);
+  const dragOffsetRef = useRef<{x: number, y: number} | null>(null);
+  const isDraggingRef = useRef(false);
+
   // Audio Refs
   const audioContextRef = useRef<AudioContext | null>(null);
   const inputSourceRef = useRef<MediaStreamAudioSourceNode | null>(null);
@@ -43,34 +54,74 @@ export const VoiceHardy: React.FC = () => {
     };
   }, []);
 
-  // Draggable Handlers
+  // --- Flawless Drag Logic ---
   const handlePointerDown = (e: React.PointerEvent) => {
-    dragStartRef.current = {
-      x: e.clientX - position.x,
-      y: e.clientY - position.y
-    };
-    setIsDragging(false);
+    // Prevent default browser touch actions (scrolling)
+    e.stopPropagation(); // Don't bubble to other elements
     
-    const handlePointerMove = (moveEvent: PointerEvent) => {
-      if (dragStartRef.current) {
-        const newX = moveEvent.clientX - dragStartRef.current.x;
-        const newY = moveEvent.clientY - dragStartRef.current.y;
+    const element = e.currentTarget as HTMLElement;
+    const rect = element.getBoundingClientRect();
+    
+    // Calculate where inside the button we clicked (offset)
+    dragOffsetRef.current = {
+      x: e.clientX - rect.left,
+      y: e.clientY - rect.top
+    };
+    
+    // Store initial click position to detect "intent to drag" vs "click"
+    dragStartPosRef.current = { x: e.clientX, y: e.clientY };
+    
+    isDraggingRef.current = false;
+    
+    // Attach listeners to window to handle fast movements outside the element
+    window.addEventListener('pointermove', handleWindowPointerMove);
+    window.addEventListener('pointerup', handleWindowPointerUp);
+  };
+
+  const handleWindowPointerMove = (e: PointerEvent) => {
+    if (!dragOffsetRef.current || !dragStartPosRef.current) return;
+
+    // Check if moved enough to be considered a drag (threshold: 5px)
+    const moveDist = Math.hypot(
+        e.clientX - dragStartPosRef.current.x,
+        e.clientY - dragStartPosRef.current.y
+    );
+
+    if (moveDist > 5 && !isDraggingRef.current) {
+        isDraggingRef.current = true;
+        setIsDragging(true);
+    }
+
+    if (isDraggingRef.current) {
+        e.preventDefault();
         
-        if (Math.abs(newX - position.x) > 5 || Math.abs(newY - position.y) > 5) {
-            setIsDragging(true);
-        }
+        let newX = e.clientX - dragOffsetRef.current.x;
+        let newY = e.clientY - dragOffsetRef.current.y;
+
+        // Boundary Constraints
+        const maxX = window.innerWidth - 60; // Button width approx
+        const maxY = window.innerHeight - 60; // Button height approx
+        
+        // Clamp
+        newX = Math.max(10, Math.min(newX, maxX));
+        newY = Math.max(10, Math.min(newY, maxY));
+
         setPosition({ x: newX, y: newY });
-      }
-    };
+    }
+  };
 
-    const handlePointerUp = () => {
-      dragStartRef.current = null;
-      window.removeEventListener('pointermove', handlePointerMove);
-      window.removeEventListener('pointerup', handlePointerUp);
-    };
-
-    window.addEventListener('pointermove', handlePointerMove);
-    window.addEventListener('pointerup', handlePointerUp);
+  const handleWindowPointerUp = () => {
+    window.removeEventListener('pointermove', handleWindowPointerMove);
+    window.removeEventListener('pointerup', handleWindowPointerUp);
+    
+    dragOffsetRef.current = null;
+    dragStartPosRef.current = null;
+    
+    // Small timeout to clear dragging state after the click event phase
+    setTimeout(() => {
+        setIsDragging(false);
+        isDraggingRef.current = false;
+    }, 50);
   };
 
   const cleanupAudio = () => {
@@ -167,7 +218,9 @@ export const VoiceHardy: React.FC = () => {
   };
 
   const connectToGemini = async () => {
-    if (isDragging) return;
+    // Prevent connection if we were just dragging
+    if (isDraggingRef.current) return;
+
     if (!API_KEY) {
       alert("Please provide a valid API Key in the environment.");
       return;
@@ -428,10 +481,10 @@ export const VoiceHardy: React.FC = () => {
   if (isActive) {
     return (
       <div 
-        className="fixed z-50 flex flex-col items-end gap-2 animate-in slide-in-from-bottom duration-300 touch-none"
+        className="fixed z-50 flex flex-col items-end gap-2 animate-in slide-in-from-bottom duration-300 touch-none select-none"
         style={{ 
-            right: `${position.x}px`, 
-            bottom: `${position.y}px`,
+            left: `${position.x}px`, 
+            top: `${position.y}px`,
             cursor: isDragging ? 'grabbing' : 'grab'
         }}
         onPointerDown={handlePointerDown}
@@ -488,12 +541,12 @@ export const VoiceHardy: React.FC = () => {
       onClick={connectToGemini}
       disabled={isConnecting}
       style={{ 
-        right: `${position.x}px`, 
-        bottom: `${position.y}px`,
+        left: `${position.x}px`, 
+        top: `${position.y}px`,
         transform: isDragging ? 'scale(0.95)' : 'scale(1)',
         touchAction: 'none'
       }}
-      className={`fixed z-50 w-14 h-14 rounded-full shadow-xl flex items-center justify-center transition-all ${
+      className={`fixed z-50 w-14 h-14 rounded-full shadow-xl flex items-center justify-center transition-all select-none ${
         isConnecting ? 'bg-slate-700 cursor-wait' : 'bg-gradient-to-r from-orange-600 to-amber-600 hover:shadow-orange-500/30'
       }`}
     >
