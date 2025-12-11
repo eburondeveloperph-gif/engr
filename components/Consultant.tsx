@@ -3,6 +3,14 @@ import { useStore } from '../context/StoreContext';
 import { GoogleGenAI } from '@google/genai';
 import { BrainCircuit, Loader2, Sparkles, Send } from 'lucide-react';
 
+// Safe access to process.env for Vercel/Browser environments
+const getApiKey = () => {
+  if (typeof process !== 'undefined' && process.env && process.env.API_KEY) {
+    return process.env.API_KEY;
+  }
+  return '';
+};
+
 export const Consultant: React.FC = () => {
   const { getFormattedInventory, sales, expenses } = useStore();
   const [query, setQuery] = useState('');
@@ -10,12 +18,13 @@ export const Consultant: React.FC = () => {
   const [isLoading, setIsLoading] = useState(false);
 
   const handleConsult = async () => {
-    if (!query.trim() || !process.env.API_KEY) return;
+    const apiKey = getApiKey();
+    if (!query.trim() || !apiKey) return;
     setIsLoading(true);
     setResponse('');
 
     try {
-      const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+      const ai = new GoogleGenAI({ apiKey });
       
       // Prepare context data
       const salesSummary = `Total Sales: ${sales.length}, Revenue: ₱${sales.reduce((a,b)=>a+b.total,0)}`;

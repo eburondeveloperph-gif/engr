@@ -5,6 +5,14 @@ import { GoogleGenAI, Type } from '@google/genai';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts';
 import { supabase } from '../services/supabaseClient';
 
+// Safe access to process.env for Vercel/Browser environments
+const getApiKey = () => {
+  if (typeof process !== 'undefined' && process.env && process.env.API_KEY) {
+    return process.env.API_KEY;
+  }
+  return '';
+};
+
 export const Accounting: React.FC = () => {
   const { sales, expenses, addExpense } = useStore();
   const [isAnalyzing, setIsAnalyzing] = useState(false);
@@ -76,9 +84,10 @@ export const Accounting: React.FC = () => {
         const base64Data = (reader.result as string).split(',')[1];
         
         try {
-          if (!process.env.API_KEY) throw new Error("No API Key");
+          const apiKey = getApiKey();
+          if (!apiKey) throw new Error("No API Key configured");
           
-          const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+          const ai = new GoogleGenAI({ apiKey });
           
           const response = await ai.models.generateContent({
             model: 'gemini-3-pro-preview',
@@ -115,7 +124,7 @@ export const Accounting: React.FC = () => {
 
         } catch (err) {
           console.error("Analysis failed", err);
-          alert("Failed to analyze receipt.");
+          alert("Failed to analyze receipt. Check API Key.");
         } finally {
           setIsAnalyzing(false);
         }
