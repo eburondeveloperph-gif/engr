@@ -59,7 +59,10 @@ export const POS: React.FC = () => {
         <div className="bg-white p-8 w-full max-w-sm shadow-xl rounded-none border-t-8 border-orange-500 relative print-area">
           <div className="text-center mb-6">
             <h1 className="text-2xl font-bold uppercase tracking-wider text-slate-800">Engr Quilang</h1>
-            <p className="text-xs text-slate-500 uppercase tracking-widest">Hardware Supply</p>
+            <p className="text-xs text-slate-500 uppercase tracking-widest font-bold mb-1">Hardware Supply</p>
+            <p className="text-xs text-slate-600">Cabbo Penablanca, Cagayan</p>
+            <p className="text-xs text-slate-600 mb-2">+639955597560</p>
+            <div className="w-full border-b border-slate-200 mb-2"></div>
             <p className="text-xs text-slate-400 mt-1">{new Date().toLocaleString()}</p>
             <p className="text-xs text-slate-400">Order ID: #{lastSaleId.slice(-6)}</p>
           </div>

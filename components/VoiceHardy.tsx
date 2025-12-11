@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { GoogleGenAI, LiveServerMessage, Modality } from '@google/genai';
-import { Mic, MicOff, Volume2, Loader2, X } from 'lucide-react';
+import { Mic, MicOff, Volume2, Loader2, X, Camera, CameraOff } from 'lucide-react';
 import { useStore } from '../context/StoreContext';
 import { base64ToUint8Array, createPcmBlob, decodeAudioData } from '../services/audioUtils';
 import { SYSTEM_INSTRUCTION_HARDY } from '../constants';
@@ -11,7 +11,8 @@ export const VoiceHardy: React.FC = () => {
   const { inventory, sales, expenses, getFormattedInventory } = useStore();
   const [isActive, setIsActive] = useState(false);
   const [isConnecting, setIsConnecting] = useState(false);
-  const [volume, setVolume] = useState(0); // For visualizing voice activity
+  const [volume, setVolume] = useState(0); 
+  const [isCameraOn, setIsCameraOn] = useState(false);
   
   // Audio Refs
   const audioContextRef = useRef<AudioContext | null>(null);
@@ -20,12 +21,19 @@ export const VoiceHardy: React.FC = () => {
   const nextStartTimeRef = useRef<number>(0);
   const sourcesRef = useRef<Set<AudioBufferSourceNode>>(new Set());
   
+  // Video Refs
+  const videoRef = useRef<HTMLVideoElement | null>(null);
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const videoStreamRef = useRef<MediaStream | null>(null);
+  const frameIntervalRef = useRef<number | null>(null);
+  
   // GenAI Refs
-  const sessionRef = useRef<any>(null); // To hold the active session promise/object
+  const sessionRef = useRef<any>(null); 
 
   useEffect(() => {
     return () => {
       cleanupAudio();
+      cleanupVideo();
     };
   }, []);
 
@@ -46,12 +54,78 @@ export const VoiceHardy: React.FC = () => {
     sourcesRef.current.clear();
   };
 
+  const cleanupVideo = () => {
+    if (frameIntervalRef.current) {
+      clearInterval(frameIntervalRef.current);
+      frameIntervalRef.current = null;
+    }
+    if (videoStreamRef.current) {
+      videoStreamRef.current.getTracks().forEach(track => track.stop());
+      videoStreamRef.current = null;
+    }
+    setIsCameraOn(false);
+  };
+
   const initializeAudio = async () => {
     cleanupAudio();
     const ctx = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 24000 });
     audioContextRef.current = ctx;
     nextStartTimeRef.current = ctx.currentTime;
     return ctx;
+  };
+
+  const toggleCamera = async () => {
+    if (isCameraOn) {
+      cleanupVideo();
+    } else {
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ 
+          video: { 
+            facingMode: 'environment',
+            width: { ideal: 640 },
+            height: { ideal: 480 }
+          } 
+        });
+        videoStreamRef.current = stream;
+        if (videoRef.current) {
+          videoRef.current.srcObject = stream;
+          await videoRef.current.play();
+        }
+        setIsCameraOn(true);
+        startFrameCapture();
+      } catch (err) {
+        console.error("Failed to access camera", err);
+        alert("Could not access camera for vision features.");
+      }
+    }
+  };
+
+  const startFrameCapture = () => {
+    if (frameIntervalRef.current) clearInterval(frameIntervalRef.current);
+    
+    // Capture 1 frame every second (1 FPS) is usually sufficient for object ID without overloading
+    frameIntervalRef.current = window.setInterval(() => {
+      if (!videoRef.current || !canvasRef.current || !sessionRef.current) return;
+      
+      const ctx = canvasRef.current.getContext('2d');
+      if (!ctx) return;
+
+      canvasRef.current.width = videoRef.current.videoWidth;
+      canvasRef.current.height = videoRef.current.videoHeight;
+      ctx.drawImage(videoRef.current, 0, 0);
+
+      const base64Data = canvasRef.current.toDataURL('image/jpeg', 0.6).split(',')[1];
+      
+      sessionRef.current.then((session: any) => {
+        session.sendRealtimeInput({ 
+          media: { 
+            mimeType: 'image/jpeg', 
+            data: base64Data 
+          } 
+        });
+      });
+
+    }, 1000); 
   };
 
   const connectToGemini = async () => {
@@ -65,7 +139,6 @@ export const VoiceHardy: React.FC = () => {
       const ctx = await initializeAudio();
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       
-      // Input handling (Microphone -> Gemini)
       const inputCtx = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 16000 });
       const source = inputCtx.createMediaStreamSource(stream);
       const scriptProcessor = inputCtx.createScriptProcessor(4096, 1, 1);
@@ -75,7 +148,6 @@ export const VoiceHardy: React.FC = () => {
 
       const ai = new GoogleGenAI({ apiKey: API_KEY });
 
-      // Define Tools for Hardy
       const tools = [{
         functionDeclarations: [
           {
@@ -105,13 +177,11 @@ export const VoiceHardy: React.FC = () => {
             setIsConnecting(false);
             setIsActive(true);
             
-            // Start audio processing pipeline
             scriptProcessor.onaudioprocess = (e) => {
               const inputData = e.inputBuffer.getChannelData(0);
-              // Calculate volume for visualization
               let sum = 0;
               for(let i=0; i<inputData.length; i++) sum += inputData[i] * inputData[i];
-              setVolume(Math.sqrt(sum / inputData.length) * 5); // Scale up a bit
+              setVolume(Math.sqrt(sum / inputData.length) * 5); 
 
               const pcmBlob = createPcmBlob(inputData);
               sessionPromise.then(session => {
@@ -122,7 +192,6 @@ export const VoiceHardy: React.FC = () => {
             scriptProcessor.connect(inputCtx.destination);
           },
           onmessage: async (message: LiveServerMessage) => {
-            // Handle Audio Output
             const base64Audio = message.serverContent?.modelTurn?.parts?.[0]?.inlineData?.data;
             if (base64Audio && ctx) {
                try {
@@ -148,28 +217,16 @@ export const VoiceHardy: React.FC = () => {
               }
             }
 
-            // Handle Interruption
             if (message.serverContent?.interrupted) {
               sourcesRef.current.forEach(s => s.stop());
               sourcesRef.current.clear();
               nextStartTimeRef.current = ctx.currentTime;
             }
 
-            // Handle Function Calls
             if (message.toolCall) {
               for (const fc of message.toolCall.functionCalls) {
                  let result = {};
                  if (fc.name === 'getInventorySummary') {
-                    // We need real-time data from the store.
-                    // Since this callback is a closure, we might need a ref if we want *live* state update,
-                    // but for this demo, fetching from context via a helper or just re-reading current state 
-                    // (which might be stale inside callback) is a common issue.
-                    // However, we can use the `getFormattedInventory` from the closure scope if it updates,
-                    // or better, pass the latest state if possible. 
-                    // In this simple setup, we'll try to use the function available in scope.
-                    // *Self-Correction*: The closure captures the initial state. 
-                    // We'll trust that for this specific component structure, or use a Ref for inventory.
-                    // For safety, let's just grab the items from localStorage directly for fresh data.
                     const inv = JSON.parse(localStorage.getItem('inventory') || '[]');
                     result = { summary: inv.map((i:any) => `${i.name}: ${i.stock} ${i.unit}`).join(', ') };
                  } else if (fc.name === 'getLowStockAlerts') {
@@ -193,11 +250,13 @@ export const VoiceHardy: React.FC = () => {
           onclose: () => {
             console.log("Disconnected");
             setIsActive(false);
+            cleanupVideo();
           },
           onerror: (err) => {
             console.error("Gemini Live Error", err);
             setIsActive(false);
             setIsConnecting(false);
+            cleanupVideo();
           }
         }
       });
@@ -215,12 +274,19 @@ export const VoiceHardy: React.FC = () => {
       sessionRef.current = null;
     }
     cleanupAudio();
+    cleanupVideo();
     setIsActive(false);
   };
 
   if (isActive) {
     return (
-      <div className="fixed bottom-20 right-4 z-50 flex flex-col items-center gap-2 animate-in slide-in-from-bottom duration-300">
+      <div className="fixed bottom-20 right-4 z-50 flex flex-col items-end gap-2 animate-in slide-in-from-bottom duration-300">
+        {/* Video Preview */}
+        <div className={`transition-all duration-300 overflow-hidden rounded-xl border border-orange-500/30 shadow-2xl bg-black ${isCameraOn ? 'w-32 h-44 mb-2' : 'w-0 h-0'}`}>
+          <video ref={videoRef} className="w-full h-full object-cover" autoPlay muted playsInline />
+          <canvas ref={canvasRef} className="hidden" />
+        </div>
+
         <div className="bg-slate-900 text-white p-4 rounded-full shadow-2xl flex items-center gap-4 border border-orange-500/50">
           <div 
             className="w-12 h-12 rounded-full bg-orange-500 flex items-center justify-center transition-all"
@@ -230,8 +296,18 @@ export const VoiceHardy: React.FC = () => {
           </div>
           <div className="flex flex-col">
             <span className="font-bold text-orange-400">Hardy</span>
-            <span className="text-xs text-slate-400">Listening...</span>
+            <span className="text-xs text-slate-400">{isCameraOn ? "Watching..." : "Listening..."}</span>
           </div>
+          
+          <div className="h-8 w-px bg-slate-700 mx-1"></div>
+
+          <button 
+            onClick={toggleCamera}
+            className={`p-2 rounded-full transition-colors ${isCameraOn ? 'bg-orange-500/20 text-orange-400' : 'bg-slate-800 text-slate-300 hover:text-white'}`}
+          >
+            {isCameraOn ? <CameraOff className="w-5 h-5" /> : <Camera className="w-5 h-5" />}
+          </button>
+
           <button 
             onClick={disconnect}
             className="p-2 bg-slate-800 rounded-full hover:bg-red-500/20 text-slate-300 hover:text-red-400 transition-colors"
