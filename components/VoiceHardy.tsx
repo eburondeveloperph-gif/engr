@@ -214,7 +214,18 @@ export const VoiceHardy: React.FC = () => {
           },
           {
             name: "getCustomerDebt",
-            description: "Search for a customer/builder by name and get their current balance (debt or credit).",
+            description: "Search for a customer/builder by name and get their financial summary: current balance, total charges, and total deposits.",
+            parameters: {
+                type: Type.OBJECT,
+                properties: {
+                    nameQuery: { type: Type.STRING, description: "The customer or builder name to search" }
+                },
+                required: ["nameQuery"]
+            }
+          },
+          {
+            name: "getCustomerTransactions",
+            description: "Get the recent transaction history (charges and payments) for a specific customer/builder.",
             parameters: {
                 type: Type.OBJECT,
                 properties: {
@@ -327,18 +338,44 @@ export const VoiceHardy: React.FC = () => {
                         const { data: customers } = await supabase.from('customers').select('*').ilike('name', `%${q}%`);
                         if (customers && customers.length > 0) {
                             const customer = customers[0];
-                            // Calculate debt manually via SQL or simple sum since we don't have a view
                             const { data: txs } = await supabase.from('customer_transactions').select('*').eq('customer_id', customer.id);
+                            
                             const charges = txs?.filter(t => t.type === 'CHARGE').reduce((sum, t) => sum + t.amount, 0) || 0;
                             const deposits = txs?.filter(t => t.type === 'DEPOSIT').reduce((sum, t) => sum + t.amount, 0) || 0;
                             const balance = charges - deposits;
+                            
                             result = {
                                 name: customer.name,
-                                balance: balance,
-                                status: balance > 0 ? "Debt / Utang" : "Paid / Credit"
+                                totalCharges: `₱${charges.toLocaleString()}`,
+                                totalDeposits: `₱${deposits.toLocaleString()}`,
+                                currentBalance: `₱${Math.abs(balance).toLocaleString()}`,
+                                status: balance > 0 ? "Has Debt (Utang)" : "Fully Paid / In Credit",
+                                message: balance > 0 ? "Kailangan na maningil Boss!" : "Ayos, good payer si Boss."
                             };
                         } else {
                             result = { error: "Customer not found." };
+                        }
+                     }
+                     else if (fc.name === 'getCustomerTransactions') {
+                        const q = (fc.args as any).nameQuery;
+                        const { data: customers } = await supabase.from('customers').select('*').ilike('name', `%${q}%`);
+                        if (customers && customers.length > 0) {
+                            const customer = customers[0];
+                            const { data: txs } = await supabase
+                                .from('customer_transactions')
+                                .select('*')
+                                .eq('customer_id', customer.id)
+                                .order('date', { ascending: false })
+                                .limit(5);
+
+                            result = {
+                                customer: customer.name,
+                                recentTransactions: txs && txs.length > 0 
+                                    ? txs.map(t => `${new Date(t.date).toLocaleDateString()}: ${t.type} ₱${t.amount} (${t.description})`) 
+                                    : "No recent transactions."
+                            };
+                        } else {
+                             result = { error: "Customer not found." };
                         }
                      }
                  } catch (err) {
