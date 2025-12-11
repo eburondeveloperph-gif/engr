@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useStore } from '../context/StoreContext';
-import { Product, SaleItem } from '../types';
+import { Product, SaleItem, Sale } from '../types';
 import { ShoppingCart, Plus, Minus, Trash2, Printer } from 'lucide-react';
 
 export const POS: React.FC = () => {
@@ -8,7 +8,7 @@ export const POS: React.FC = () => {
   const [cart, setCart] = useState<SaleItem[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [showReceipt, setShowReceipt] = useState(false);
-  const [lastSaleId, setLastSaleId] = useState<string>('');
+  const [lastSale, setLastSale] = useState<Sale | null>(null);
 
   const addToCart = (product: Product) => {
     setCart(prev => {
@@ -42,18 +42,20 @@ export const POS: React.FC = () => {
   const handleCheckout = () => {
     if (cart.length === 0) return;
     const saleId = Date.now().toString();
-    recordSale({
+    const newSale: Sale = {
       id: saleId,
       date: new Date().toISOString(),
       items: [...cart],
       total: cartTotal
-    });
-    setLastSaleId(saleId);
+    };
+    
+    recordSale(newSale);
+    setLastSale(newSale);
     setShowReceipt(true);
     setCart([]);
   };
 
-  if (showReceipt) {
+  if (showReceipt && lastSale) {
     return (
       <div className="p-4 h-full flex flex-col items-center justify-center bg-slate-100">
         <div className="bg-white p-8 w-full max-w-sm shadow-xl rounded-none border-t-8 border-orange-500 relative print-area">
@@ -63,42 +65,47 @@ export const POS: React.FC = () => {
             <p className="text-xs text-slate-600">Cabbo Penablanca, Cagayan</p>
             <p className="text-xs text-slate-600 mb-2">+639955597560</p>
             <div className="w-full border-b border-slate-200 mb-2"></div>
-            <p className="text-xs text-slate-400 mt-1">{new Date().toLocaleString()}</p>
-            <p className="text-xs text-slate-400">Order ID: #{lastSaleId.slice(-6)}</p>
+            <p className="text-xs text-slate-400 mt-1">{new Date(lastSale.date).toLocaleString()}</p>
+            <p className="text-xs text-slate-400">Order ID: #{lastSale.id.slice(-6)}</p>
           </div>
+          
           <div className="border-t border-b border-dashed border-slate-300 py-4 my-4 space-y-2">
-            {/* We need to retrieve the last sale items from somewhere, or just trust the state cleared. 
-                Wait, we cleared cart. We need to store receipt data temporarily. 
-                But for simplicity, we just won't show the detailed list here unless we stored it.
-                Let's assume "print successful" state.
-             */}
-             <div className="text-center text-slate-500 italic">Transaction Complete</div>
-             <div className="flex justify-between font-bold text-lg mt-4 text-slate-800">
-               <span>TOTAL PAID</span>
-               <span>₱{cartTotal.toFixed(2)} (Previous)</span> 
-               {/* Note: Logic flaw above, cartTotal is 0 after clear. We should pass the sale object or keep it.
-                   Fix: don't clear cart until AFTER receipt close? Or store `lastSale` in state. 
-                   Quick fix: Just show Success Message for this demo.
-               */}
+             {lastSale.items.map((item, idx) => (
+               <div key={idx} className="flex justify-between items-start text-sm">
+                  <div className="flex flex-col">
+                    <span className="text-slate-800 font-medium">{item.name}</span>
+                    <span className="text-xs text-slate-500">{item.quantity} x ₱{item.price.toFixed(2)}</span>
+                  </div>
+                  <span className="font-semibold text-slate-700">₱{item.subtotal.toFixed(2)}</span>
+               </div>
+             ))}
+             
+             <div className="border-t border-slate-200 mt-4 pt-2"></div>
+             
+             <div className="flex justify-between font-bold text-xl mt-2 text-slate-800">
+               <span>TOTAL</span>
+               <span>₱{lastSale.total.toFixed(2)}</span>
              </div>
           </div>
+          
           <div className="text-center text-xs text-slate-400 mt-6">
             <p>Thank you for your business, Boss!</p>
             <p className="mt-1">Returns within 7 days with receipt.</p>
+            <p className="mt-6 font-bold text-slate-300 uppercase tracking-widest text-[10px]">Powered by Aitek</p>
           </div>
           
           <button 
-            onClick={() => { setShowReceipt(false); }}
+            onClick={() => { setShowReceipt(false); setLastSale(null); }}
             className="absolute top-2 right-2 text-slate-300 hover:text-slate-500 no-print"
           >
             <Minus />
           </button>
         </div>
         <div className="mt-6 flex gap-4">
-          <button onClick={() => window.print()} className="flex items-center gap-2 bg-slate-800 text-white px-6 py-3 rounded-lg shadow-lg">
+          <button onClick={() => window.print()} className="flex items-center gap-2 bg-slate-800 text-white px-6 py-3 rounded-lg shadow-lg hover:bg-slate-900 transition-colors">
             <Printer size={18} /> Print Invoice
           </button>
-          <button onClick={() => setShowReceipt(false)} className="px-6 py-3 rounded-lg text-slate-600 hover:bg-slate-200">
+          <button onClick={() => { setShowReceipt(false); setLastSale(null); }} className="px-6 py-3 rounded-lg text-slate-600 hover:bg-slate-200 transition-colors">
             Close
           </button>
         </div>

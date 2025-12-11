@@ -57,7 +57,7 @@ export const Consultant: React.FC = () => {
         <div className="relative z-10">
           <h2 className="text-2xl font-bold flex items-center gap-2 mb-2"><BrainCircuit /> Business Strategist</h2>
           <p className="text-indigo-100 text-sm max-w-md">
-            Uses Gemini 3 Pro with deep reasoning (Thinking Mode) to analyze your business data and answer complex strategic questions.
+            Uses Aitek 3 Pro with deep reasoning (Thinking Mode) to analyze your business data and answer complex strategic questions.
           </p>
         </div>
         <Sparkles className="absolute right-[-20px] top-[-20px] text-white opacity-10 w-40 h-40" />
