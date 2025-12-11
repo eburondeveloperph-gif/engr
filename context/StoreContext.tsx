@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
-import { Product, Sale, Expense } from '../types';
+import { Product, Sale, Expense, Customer, CustomerTransaction } from '../types';
 import { INITIAL_INVENTORY } from '../constants';
 import { supabase } from '../services/supabaseClient';
 
@@ -7,10 +7,14 @@ interface StoreContextType {
   inventory: Product[];
   sales: Sale[];
   expenses: Expense[];
+  customers: Customer[];
+  customerTransactions: CustomerTransaction[];
   addProduct: (product: Product) => Promise<void>;
   updateProduct: (id: string, updates: Partial<Product>) => Promise<void>;
   recordSale: (sale: Sale) => Promise<void>;
   addExpense: (expense: Expense) => Promise<void>;
+  addCustomer: (customer: Customer) => Promise<void>;
+  addCustomerTransaction: (transaction: CustomerTransaction) => Promise<void>;
   getFormattedInventory: () => string;
   isLoading: boolean;
 }
@@ -21,6 +25,8 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const [inventory, setInventory] = useState<Product[]>(INITIAL_INVENTORY);
   const [sales, setSales] = useState<Sale[]>([]);
   const [expenses, setExpenses] = useState<Expense[]>([]);
+  const [customers, setCustomers] = useState<Customer[]>([]);
+  const [customerTransactions, setCustomerTransactions] = useState<CustomerTransaction[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
   // Load from Supabase on mount
@@ -32,9 +38,6 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         const { data: prodData } = await supabase.from('products').select('*');
         if (prodData && prodData.length > 0) {
           setInventory(prodData);
-        } else {
-            // Seed initial inventory if empty (optional, mostly for demo)
-           // await supabase.from('products').insert(INITIAL_INVENTORY);
         }
 
         // Fetch Sales
@@ -45,6 +48,14 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         const { data: expData } = await supabase.from('expenses').select('*').order('date', { ascending: false });
         if (expData) setExpenses(expData);
 
+        // Fetch Customers
+        const { data: custData } = await supabase.from('customers').select('*');
+        if (custData) setCustomers(custData);
+
+        // Fetch Transactions
+        const { data: transData } = await supabase.from('customer_transactions').select('*').order('date', { ascending: false });
+        if (transData) setCustomerTransactions(transData);
+
       } catch (error) {
         console.error("Error fetching data:", error);
       } finally {
@@ -53,13 +64,33 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     };
 
     fetchData();
+
+    // Setup Realtime Subscription
+    const channel = supabase.channel('db-changes')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'products' }, (payload) => {
+         if(payload.eventType === 'INSERT') setInventory(prev => [...prev, payload.new as Product]);
+         if(payload.eventType === 'UPDATE') setInventory(prev => prev.map(p => p.id === payload.new.id ? payload.new as Product : p));
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'sales' }, (payload) => {
+         if(payload.eventType === 'INSERT') setSales(prev => [payload.new as Sale, ...prev]);
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'customers' }, (payload) => {
+         if(payload.eventType === 'INSERT') setCustomers(prev => [...prev, payload.new as Customer]);
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'customer_transactions' }, (payload) => {
+         if(payload.eventType === 'INSERT') setCustomerTransactions(prev => [payload.new as CustomerTransaction, ...prev]);
+      })
+      .subscribe();
+
+    return () => { supabase.removeChannel(channel); }
+
   }, []);
 
   const addProduct = async (product: Product) => {
     try {
         const { error } = await supabase.from('products').insert([product]);
         if (error) throw error;
-        setInventory(prev => [...prev, product]);
+        // State update handled by realtime or manual fallback if needed
     } catch (e) {
         console.error("Failed to add product", e);
     }
@@ -69,7 +100,6 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     try {
         const { error } = await supabase.from('products').update(updates).eq('id', id);
         if (error) throw error;
-        setInventory(prev => prev.map(p => p.id === id ? { ...p, ...updates } : p));
     } catch (e) {
         console.error("Failed to update product", e);
     }
@@ -80,8 +110,6 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         // 1. Insert Sale
         const { error: saleError } = await supabase.from('sales').insert([sale]);
         if (saleError) throw saleError;
-
-        setSales(prev => [sale, ...prev]);
 
         // 2. Update Inventory Stocks
         for (const item of sale.items) {
@@ -104,12 +132,37 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
             description: expense.description,
             amount: expense.amount,
             category: expense.category,
-            receipt_url: expense.receiptImage // Mapping receiptImage property to receipt_url column
+            receipt_url: expense.receiptImage 
         }]);
         if (error) throw error;
-        setExpenses(prev => [expense, ...prev]);
+        setExpenses(prev => [expense, ...prev]); // Optimistic update for expenses since we aren't strict on realtime for this demo
     } catch (e) {
         console.error("Failed to add expense", e);
+    }
+  };
+
+  const addCustomer = async (customer: Customer) => {
+    try {
+      const { error } = await supabase.from('customers').insert([customer]);
+      if (error) throw error;
+    } catch (e) {
+      console.error("Failed to add customer", e);
+    }
+  };
+
+  const addCustomerTransaction = async (transaction: CustomerTransaction) => {
+    try {
+      const { error } = await supabase.from('customer_transactions').insert([{
+        id: transaction.id,
+        customer_id: transaction.customerId, // Mapping for DB column
+        type: transaction.type,
+        amount: transaction.amount,
+        description: transaction.description,
+        date: transaction.date
+      }]);
+      if (error) throw error;
+    } catch (e) {
+      console.error("Failed to add transaction", e);
     }
   };
 
@@ -118,7 +171,11 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   };
 
   return (
-    <StoreContext.Provider value={{ inventory, sales, expenses, addProduct, updateProduct, recordSale, addExpense, getFormattedInventory, isLoading }}>
+    <StoreContext.Provider value={{ 
+      inventory, sales, expenses, customers, customerTransactions,
+      addProduct, updateProduct, recordSale, addExpense, addCustomer, addCustomerTransaction,
+      getFormattedInventory, isLoading 
+    }}>
       {children}
     </StoreContext.Provider>
   );

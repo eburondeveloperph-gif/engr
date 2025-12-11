@@ -211,6 +211,17 @@ export const VoiceHardy: React.FC = () => {
                  },
                  required: ["query"]
              }
+          },
+          {
+            name: "getCustomerDebt",
+            description: "Search for a customer/builder by name and get their current balance (debt or credit).",
+            parameters: {
+                type: Type.OBJECT,
+                properties: {
+                    nameQuery: { type: Type.STRING, description: "The customer or builder name to search" }
+                },
+                required: ["nameQuery"]
+            }
           }
         ]
       }];
@@ -310,6 +321,25 @@ export const VoiceHardy: React.FC = () => {
                          const q = (fc.args as any).query;
                          const { data } = await supabase.from('products').select('*').ilike('name', `%${q}%`);
                          result = { found: data && data.length > 0 ? data : "No item found" };
+                     }
+                     else if (fc.name === 'getCustomerDebt') {
+                        const q = (fc.args as any).nameQuery;
+                        const { data: customers } = await supabase.from('customers').select('*').ilike('name', `%${q}%`);
+                        if (customers && customers.length > 0) {
+                            const customer = customers[0];
+                            // Calculate debt manually via SQL or simple sum since we don't have a view
+                            const { data: txs } = await supabase.from('customer_transactions').select('*').eq('customer_id', customer.id);
+                            const charges = txs?.filter(t => t.type === 'CHARGE').reduce((sum, t) => sum + t.amount, 0) || 0;
+                            const deposits = txs?.filter(t => t.type === 'DEPOSIT').reduce((sum, t) => sum + t.amount, 0) || 0;
+                            const balance = charges - deposits;
+                            result = {
+                                name: customer.name,
+                                balance: balance,
+                                status: balance > 0 ? "Debt / Utang" : "Paid / Credit"
+                            };
+                        } else {
+                            result = { error: "Customer not found." };
+                        }
                      }
                  } catch (err) {
                      console.error("Tool execution failed", err);

@@ -31,11 +31,28 @@ export interface Expense {
   receiptImage?: string; // base64
 }
 
+export interface Customer {
+  id: string;
+  name: string;
+  contact: string;
+  address: string;
+}
+
+export interface CustomerTransaction {
+  id: string;
+  customerId: string;
+  type: 'CHARGE' | 'DEPOSIT';
+  amount: number;
+  description: string;
+  date: string;
+}
+
 export enum ViewState {
   POS = 'POS',
   INVENTORY = 'INVENTORY',
   ACCOUNTING = 'ACCOUNTING',
-  CONSULTANT = 'CONSULTANT'
+  CONSULTANT = 'CONSULTANT',
+  CUSTOMERS = 'CUSTOMERS'
 }
 
 export interface AiThinkingConfig {

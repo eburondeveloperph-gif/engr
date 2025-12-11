@@ -4,8 +4,9 @@ import { Inventory } from './components/Inventory';
 import { POS } from './components/POS';
 import { Accounting } from './components/Accounting';
 import { Consultant } from './components/Consultant';
+import { Customers } from './components/Customers';
 import { VoiceHardy } from './components/VoiceHardy';
-import { LayoutGrid, ShoppingCart, PieChart, BrainCircuit, Menu, X, ChevronLeft, ChevronRight, User } from 'lucide-react';
+import { LayoutGrid, ShoppingCart, PieChart, BrainCircuit, Menu, X, ChevronLeft, ChevronRight, User, Users } from 'lucide-react';
 import { ViewState } from './types';
 
 const App: React.FC = () => {
@@ -34,6 +35,7 @@ const App: React.FC = () => {
       case ViewState.POS: return <POS />;
       case ViewState.ACCOUNTING: return <Accounting />;
       case ViewState.CONSULTANT: return <Consultant />;
+      case ViewState.CUSTOMERS: return <Customers />;
       default: return <POS />;
     }
   };
@@ -109,6 +111,7 @@ const App: React.FC = () => {
             <NavItem view={ViewState.POS} icon={<ShoppingCart size={22} />} label="Point of Sale" />
             <NavItem view={ViewState.INVENTORY} icon={<LayoutGrid size={22} />} label="Inventory" />
             <NavItem view={ViewState.ACCOUNTING} icon={<PieChart size={22} />} label="Accounting" />
+            <NavItem view={ViewState.CUSTOMERS} icon={<Users size={22} />} label="Builders & Billing" />
             
             <div className="my-4 border-t border-slate-100 mx-4"></div>
             
@@ -148,12 +151,13 @@ const App: React.FC = () => {
                  {currentView === ViewState.INVENTORY && 'Inventory Management'}
                  {currentView === ViewState.ACCOUNTING && 'Financial Overview'}
                  {currentView === ViewState.CONSULTANT && 'Business Intelligence'}
+                 {currentView === ViewState.CUSTOMERS && 'Builders Billing'}
                </h1>
              </div>
              <div className="flex items-center gap-3">
                 <div className="hidden md:flex flex-col items-end">
                    <span className="text-xs font-bold text-slate-700">Emilio LLM v1.0</span>
-                   <span className="text-[10px] text-slate-400">Powered by Gemini</span>
+                   <span className="text-[10px] text-slate-400">Powered by Aitek</span>
                 </div>
                 <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse"></div>
              </div>
