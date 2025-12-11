@@ -1,18 +1,24 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { GoogleGenAI, LiveServerMessage, Modality } from '@google/genai';
-import { Mic, MicOff, Volume2, Loader2, X, Camera, CameraOff } from 'lucide-react';
+import { GoogleGenAI, LiveServerMessage, Modality, Type } from '@google/genai';
+import { Mic, MicOff, Volume2, Loader2, X, Camera, CameraOff, GripVertical } from 'lucide-react';
 import { useStore } from '../context/StoreContext';
 import { base64ToUint8Array, createPcmBlob, decodeAudioData } from '../services/audioUtils';
 import { SYSTEM_INSTRUCTION_HARDY } from '../constants';
+import { supabase } from '../services/supabaseClient';
 
 const API_KEY = process.env.API_KEY || '';
 
 export const VoiceHardy: React.FC = () => {
-  const { inventory, sales, expenses, getFormattedInventory } = useStore();
+  const { inventory, sales, expenses } = useStore(); // We still use context for simple reactive updates if needed
   const [isActive, setIsActive] = useState(false);
   const [isConnecting, setIsConnecting] = useState(false);
   const [volume, setVolume] = useState(0); 
   const [isCameraOn, setIsCameraOn] = useState(false);
+  
+  // Draggable State
+  const [position, setPosition] = useState({ x: 20, y: 80 });
+  const [isDragging, setIsDragging] = useState(false);
+  const dragStartRef = useRef<{x: number, y: number} | null>(null);
   
   // Audio Refs
   const audioContextRef = useRef<AudioContext | null>(null);
@@ -36,6 +42,37 @@ export const VoiceHardy: React.FC = () => {
       cleanupVideo();
     };
   }, []);
+
+  // Draggable Handlers
+  const handlePointerDown = (e: React.PointerEvent) => {
+    dragStartRef.current = {
+      x: e.clientX - position.x,
+      y: e.clientY - position.y
+    };
+    setIsDragging(false);
+    
+    const handlePointerMove = (moveEvent: PointerEvent) => {
+      if (dragStartRef.current) {
+        const newX = moveEvent.clientX - dragStartRef.current.x;
+        const newY = moveEvent.clientY - dragStartRef.current.y;
+        
+        // Simple distance check to differentiate click vs drag
+        if (Math.abs(newX - position.x) > 5 || Math.abs(newY - position.y) > 5) {
+            setIsDragging(true);
+        }
+        setPosition({ x: newX, y: newY });
+      }
+    };
+
+    const handlePointerUp = () => {
+      dragStartRef.current = null;
+      window.removeEventListener('pointermove', handlePointerMove);
+      window.removeEventListener('pointerup', handlePointerUp);
+    };
+
+    window.addEventListener('pointermove', handlePointerMove);
+    window.addEventListener('pointerup', handlePointerUp);
+  };
 
   const cleanupAudio = () => {
     if (processorRef.current) {
@@ -129,6 +166,7 @@ export const VoiceHardy: React.FC = () => {
   };
 
   const connectToGemini = async () => {
+    if (isDragging) return; // Prevent click if dragging
     if (!API_KEY) {
       alert("Please provide a valid API Key in the environment.");
       return;
@@ -148,15 +186,31 @@ export const VoiceHardy: React.FC = () => {
 
       const ai = new GoogleGenAI({ apiKey: API_KEY });
 
+      // Define Tools that query Supabase directly for realtime truth
       const tools = [{
         functionDeclarations: [
           {
             name: "getInventorySummary",
-            description: "Get a summary of all items in the inventory and their stock levels.",
+            description: "Get a summary of all items in the inventory, their stock levels, and prices.",
           },
           {
             name: "getLowStockAlerts",
             description: "Get a list of items that have low stock (less than 50).",
+          },
+          {
+            name: "getSalesPerformance",
+            description: "Get the total revenue, total sales count, and recent sales data.",
+          },
+          {
+             name: "searchProduct",
+             description: "Search for a specific product price and stock by name.",
+             parameters: {
+                 type: Type.OBJECT,
+                 properties: {
+                     query: { type: Type.STRING, description: "The product name to search for" }
+                 },
+                 required: ["query"]
+             }
           }
         ]
       }];
@@ -226,13 +280,40 @@ export const VoiceHardy: React.FC = () => {
             if (message.toolCall) {
               for (const fc of message.toolCall.functionCalls) {
                  let result = {};
-                 if (fc.name === 'getInventorySummary') {
-                    const inv = JSON.parse(localStorage.getItem('inventory') || '[]');
-                    result = { summary: inv.map((i:any) => `${i.name}: ${i.stock} ${i.unit}`).join(', ') };
-                 } else if (fc.name === 'getLowStockAlerts') {
-                    const inv = JSON.parse(localStorage.getItem('inventory') || '[]');
-                    const low = inv.filter((i:any) => i.stock < 50);
-                    result = { lowStockItems: low.map((i:any) => i.name).join(', ') || "None" };
+                 
+                 try {
+                     // DIRECT DATABASE QUERIES FOR REALTIME CONTEXT
+                     if (fc.name === 'getInventorySummary') {
+                        const { data } = await supabase.from('products').select('*');
+                        if (data) {
+                             const summary = data.map(i => `${i.name}: ${i.stock} ${i.unit} @ ₱${i.price}`).join(', ');
+                             result = { summary };
+                        }
+                     } 
+                     else if (fc.name === 'getLowStockAlerts') {
+                        const { data } = await supabase.from('products').select('*').lt('stock', 50);
+                        if (data) {
+                            result = { lowStockItems: data.map(i => `${i.name} (${i.stock} left)`).join(', ') || "No items are low on stock." };
+                        }
+                     }
+                     else if (fc.name === 'getSalesPerformance') {
+                         const { data: salesData } = await supabase.from('sales').select('total');
+                         const totalRevenue = salesData?.reduce((acc, curr) => acc + curr.total, 0) || 0;
+                         const count = salesData?.length || 0;
+                         result = { 
+                             totalRevenue: `₱${totalRevenue.toLocaleString()}`, 
+                             totalSalesCount: count,
+                             message: totalRevenue > 10000 ? "Nakasta nay Boss! Good profit today." : "Need more push Boss."
+                         };
+                     }
+                     else if (fc.name === 'searchProduct') {
+                         const q = (fc.args as any).query;
+                         const { data } = await supabase.from('products').select('*').ilike('name', `%${q}%`);
+                         result = { found: data && data.length > 0 ? data : "No item found" };
+                     }
+                 } catch (err) {
+                     console.error("Tool execution failed", err);
+                     result = { error: "Database access error." };
                  }
 
                  sessionPromise.then(session => {
@@ -280,14 +361,28 @@ export const VoiceHardy: React.FC = () => {
 
   if (isActive) {
     return (
-      <div className="fixed bottom-20 right-4 z-50 flex flex-col items-end gap-2 animate-in slide-in-from-bottom duration-300">
+      <div 
+        className="fixed z-50 flex flex-col items-end gap-2 animate-in slide-in-from-bottom duration-300 touch-none"
+        style={{ 
+            right: `${position.x}px`, 
+            bottom: `${position.y}px`,
+            cursor: isDragging ? 'grabbing' : 'grab'
+        }}
+        onPointerDown={handlePointerDown}
+      >
         {/* Video Preview */}
         <div className={`transition-all duration-300 overflow-hidden rounded-xl border border-orange-500/30 shadow-2xl bg-black ${isCameraOn ? 'w-32 h-44 mb-2' : 'w-0 h-0'}`}>
           <video ref={videoRef} className="w-full h-full object-cover" autoPlay muted playsInline />
           <canvas ref={canvasRef} className="hidden" />
         </div>
 
-        <div className="bg-slate-900 text-white p-4 rounded-full shadow-2xl flex items-center gap-4 border border-orange-500/50">
+        <div className="bg-slate-900 text-white p-4 rounded-3xl shadow-2xl flex items-center gap-4 border border-orange-500/50 relative group">
+          
+          {/* Grip Handle */}
+          <div className="absolute -left-3 top-1/2 -translate-y-1/2 text-slate-500 opacity-50 group-hover:opacity-100">
+             <GripVertical size={16} />
+          </div>
+
           <div 
             className="w-12 h-12 rounded-full bg-orange-500 flex items-center justify-center transition-all"
             style={{ transform: `scale(${1 + Math.min(volume, 0.5)})` }}
@@ -302,6 +397,7 @@ export const VoiceHardy: React.FC = () => {
           <div className="h-8 w-px bg-slate-700 mx-1"></div>
 
           <button 
+            onPointerDown={(e) => e.stopPropagation()} // Prevent dragging when clicking buttons
             onClick={toggleCamera}
             className={`p-2 rounded-full transition-colors ${isCameraOn ? 'bg-orange-500/20 text-orange-400' : 'bg-slate-800 text-slate-300 hover:text-white'}`}
           >
@@ -309,6 +405,7 @@ export const VoiceHardy: React.FC = () => {
           </button>
 
           <button 
+            onPointerDown={(e) => e.stopPropagation()} // Prevent dragging when clicking buttons
             onClick={disconnect}
             className="p-2 bg-slate-800 rounded-full hover:bg-red-500/20 text-slate-300 hover:text-red-400 transition-colors"
           >
@@ -321,10 +418,17 @@ export const VoiceHardy: React.FC = () => {
 
   return (
     <button
+      onPointerDown={handlePointerDown}
       onClick={connectToGemini}
       disabled={isConnecting}
-      className={`fixed bottom-24 right-4 z-50 w-14 h-14 rounded-full shadow-xl flex items-center justify-center transition-all ${
-        isConnecting ? 'bg-slate-700 cursor-wait' : 'bg-gradient-to-r from-orange-600 to-amber-600 hover:scale-105 active:scale-95'
+      style={{ 
+        right: `${position.x}px`, 
+        bottom: `${position.y}px`,
+        transform: isDragging ? 'scale(0.95)' : 'scale(1)',
+        touchAction: 'none'
+      }}
+      className={`fixed z-50 w-14 h-14 rounded-full shadow-xl flex items-center justify-center transition-all ${
+        isConnecting ? 'bg-slate-700 cursor-wait' : 'bg-gradient-to-r from-orange-600 to-amber-600 hover:shadow-orange-500/30'
       }`}
     >
       {isConnecting ? (

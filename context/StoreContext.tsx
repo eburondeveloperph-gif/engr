@@ -1,16 +1,18 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { Product, Sale, Expense } from '../types';
 import { INITIAL_INVENTORY } from '../constants';
+import { supabase } from '../services/supabaseClient';
 
 interface StoreContextType {
   inventory: Product[];
   sales: Sale[];
   expenses: Expense[];
-  addProduct: (product: Product) => void;
-  updateProduct: (id: string, updates: Partial<Product>) => void;
-  recordSale: (sale: Sale) => void;
-  addExpense: (expense: Expense) => void;
+  addProduct: (product: Product) => Promise<void>;
+  updateProduct: (id: string, updates: Partial<Product>) => Promise<void>;
+  recordSale: (sale: Sale) => Promise<void>;
+  addExpense: (expense: Expense) => Promise<void>;
   getFormattedInventory: () => string;
+  isLoading: boolean;
 }
 
 const StoreContext = createContext<StoreContextType | undefined>(undefined);
@@ -19,47 +21,96 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const [inventory, setInventory] = useState<Product[]>(INITIAL_INVENTORY);
   const [sales, setSales] = useState<Sale[]>([]);
   const [expenses, setExpenses] = useState<Expense[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
 
-  // Load from local storage on mount (simulated)
+  // Load from Supabase on mount
   useEffect(() => {
-    const savedInv = localStorage.getItem('inventory');
-    if (savedInv) setInventory(JSON.parse(savedInv));
+    const fetchData = async () => {
+      setIsLoading(true);
+      try {
+        // Fetch Inventory
+        const { data: prodData } = await supabase.from('products').select('*');
+        if (prodData && prodData.length > 0) {
+          setInventory(prodData);
+        } else {
+            // Seed initial inventory if empty (optional, mostly for demo)
+           // await supabase.from('products').insert(INITIAL_INVENTORY);
+        }
 
-    const savedSales = localStorage.getItem('sales');
-    if (savedSales) setSales(JSON.parse(savedSales));
-    
-    const savedExp = localStorage.getItem('expenses');
-    if (savedExp) setExpenses(JSON.parse(savedExp));
+        // Fetch Sales
+        const { data: salesData } = await supabase.from('sales').select('*').order('date', { ascending: false });
+        if (salesData) setSales(salesData);
+
+        // Fetch Expenses
+        const { data: expData } = await supabase.from('expenses').select('*').order('date', { ascending: false });
+        if (expData) setExpenses(expData);
+
+      } catch (error) {
+        console.error("Error fetching data:", error);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    fetchData();
   }, []);
 
-  // Persist changes
-  useEffect(() => {
-    localStorage.setItem('inventory', JSON.stringify(inventory));
-    localStorage.setItem('sales', JSON.stringify(sales));
-    localStorage.setItem('expenses', JSON.stringify(expenses));
-  }, [inventory, sales, expenses]);
-
-  const addProduct = (product: Product) => {
-    setInventory(prev => [...prev, product]);
+  const addProduct = async (product: Product) => {
+    try {
+        const { error } = await supabase.from('products').insert([product]);
+        if (error) throw error;
+        setInventory(prev => [...prev, product]);
+    } catch (e) {
+        console.error("Failed to add product", e);
+    }
   };
 
-  const updateProduct = (id: string, updates: Partial<Product>) => {
-    setInventory(prev => prev.map(p => p.id === id ? { ...p, ...updates } : p));
+  const updateProduct = async (id: string, updates: Partial<Product>) => {
+    try {
+        const { error } = await supabase.from('products').update(updates).eq('id', id);
+        if (error) throw error;
+        setInventory(prev => prev.map(p => p.id === id ? { ...p, ...updates } : p));
+    } catch (e) {
+        console.error("Failed to update product", e);
+    }
   };
 
-  const recordSale = (sale: Sale) => {
-    setSales(prev => [sale, ...prev]);
-    // Deduct stock
-    sale.items.forEach(item => {
-      const product = inventory.find(p => p.id === item.productId);
-      if (product) {
-        updateProduct(product.id, { stock: product.stock - item.quantity });
-      }
-    });
+  const recordSale = async (sale: Sale) => {
+    try {
+        // 1. Insert Sale
+        const { error: saleError } = await supabase.from('sales').insert([sale]);
+        if (saleError) throw saleError;
+
+        setSales(prev => [sale, ...prev]);
+
+        // 2. Update Inventory Stocks
+        for (const item of sale.items) {
+          const product = inventory.find(p => p.id === item.productId);
+          if (product) {
+            const newStock = product.stock - item.quantity;
+            await updateProduct(product.id, { stock: newStock });
+          }
+        }
+    } catch (e) {
+        console.error("Failed to record sale", e);
+    }
   };
 
-  const addExpense = (expense: Expense) => {
-    setExpenses(prev => [expense, ...prev]);
+  const addExpense = async (expense: Expense) => {
+    try {
+        const { error } = await supabase.from('expenses').insert([{
+            id: expense.id,
+            date: expense.date,
+            description: expense.description,
+            amount: expense.amount,
+            category: expense.category,
+            receipt_url: expense.receiptImage // Mapping receiptImage property to receipt_url column
+        }]);
+        if (error) throw error;
+        setExpenses(prev => [expense, ...prev]);
+    } catch (e) {
+        console.error("Failed to add expense", e);
+    }
   };
 
   const getFormattedInventory = () => {
@@ -67,7 +118,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   };
 
   return (
-    <StoreContext.Provider value={{ inventory, sales, expenses, addProduct, updateProduct, recordSale, addExpense, getFormattedInventory }}>
+    <StoreContext.Provider value={{ inventory, sales, expenses, addProduct, updateProduct, recordSale, addExpense, getFormattedInventory, isLoading }}>
       {children}
     </StoreContext.Provider>
   );

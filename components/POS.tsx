@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { useStore } from '../context/StoreContext';
 import { Product, SaleItem, Sale } from '../types';
-import { ShoppingCart, Plus, Minus, Trash2, Printer } from 'lucide-react';
+import { ShoppingCart, Plus, Minus, Trash2, Printer, CheckCircle, Cloud } from 'lucide-react';
 
 export const POS: React.FC = () => {
   const { inventory, recordSale } = useStore();
@@ -39,7 +39,7 @@ export const POS: React.FC = () => {
 
   const cartTotal = cart.reduce((sum, item) => sum + item.subtotal, 0);
 
-  const handleCheckout = () => {
+  const handleCheckout = async () => {
     if (cart.length === 0) return;
     const saleId = Date.now().toString();
     const newSale: Sale = {
@@ -49,7 +49,7 @@ export const POS: React.FC = () => {
       total: cartTotal
     };
     
-    recordSale(newSale);
+    await recordSale(newSale); // Waits for Supabase insert
     setLastSale(newSale);
     setShowReceipt(true);
     setCart([]);
@@ -94,9 +94,15 @@ export const POS: React.FC = () => {
             <p className="mt-6 font-bold text-slate-300 uppercase tracking-widest text-[10px]">Powered by Aitek</p>
           </div>
           
+          <div className="absolute top-0 right-0 p-2 no-print">
+             <div className="bg-green-100 text-green-700 text-[10px] px-2 py-1 rounded-full flex items-center gap-1">
+                <Cloud size={10} /> Saved to DB
+             </div>
+          </div>
+          
           <button 
             onClick={() => { setShowReceipt(false); setLastSale(null); }}
-            className="absolute top-2 right-2 text-slate-300 hover:text-slate-500 no-print"
+            className="absolute top-2 left-2 text-slate-300 hover:text-slate-500 no-print"
           >
             <Minus />
           </button>
