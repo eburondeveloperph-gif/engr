@@ -104,27 +104,27 @@ export const Inventory: React.FC = () => {
             </div>
             <form onSubmit={handleSubmit} className="p-6 space-y-4">
               <div>
-                <label className="block text-xs font-medium text-slate-500 mb-1">Item Name</label>
-                <input required name="name" defaultValue={editingItem?.name} className="w-full p-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-orange-500 outline-none" />
+                <label className="block text-xs font-bold text-slate-700 mb-1">Item Name</label>
+                <input required name="name" defaultValue={editingItem?.name} className="w-full p-2 bg-slate-50 border border-slate-300 rounded-lg focus:ring-2 focus:ring-orange-500 outline-none text-slate-900 placeholder:text-slate-400" />
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-xs font-medium text-slate-500 mb-1">Category</label>
-                  <input required name="category" defaultValue={editingItem?.category} className="w-full p-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-orange-500 outline-none" />
+                  <label className="block text-xs font-bold text-slate-700 mb-1">Category</label>
+                  <input required name="category" defaultValue={editingItem?.category} className="w-full p-2 bg-slate-50 border border-slate-300 rounded-lg focus:ring-2 focus:ring-orange-500 outline-none text-slate-900 placeholder:text-slate-400" />
                 </div>
                 <div>
-                  <label className="block text-xs font-medium text-slate-500 mb-1">Unit</label>
-                  <input required name="unit" defaultValue={editingItem?.unit} placeholder="pc, kg, bag" className="w-full p-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-orange-500 outline-none" />
+                  <label className="block text-xs font-bold text-slate-700 mb-1">Unit</label>
+                  <input required name="unit" defaultValue={editingItem?.unit} placeholder="pc, kg, bag" className="w-full p-2 bg-slate-50 border border-slate-300 rounded-lg focus:ring-2 focus:ring-orange-500 outline-none text-slate-900 placeholder:text-slate-400" />
                 </div>
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-xs font-medium text-slate-500 mb-1">Price (₱)</label>
-                  <input required type="number" step="0.01" name="price" defaultValue={editingItem?.price} className="w-full p-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-orange-500 outline-none" />
+                  <label className="block text-xs font-bold text-slate-700 mb-1">Price (₱)</label>
+                  <input required type="number" step="0.01" name="price" defaultValue={editingItem?.price} className="w-full p-2 bg-slate-50 border border-slate-300 rounded-lg focus:ring-2 focus:ring-orange-500 outline-none text-slate-900 placeholder:text-slate-400" />
                 </div>
                 <div>
-                  <label className="block text-xs font-medium text-slate-500 mb-1">Stock Qty</label>
-                  <input required type="number" name="stock" defaultValue={editingItem?.stock} className="w-full p-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-orange-500 outline-none" />
+                  <label className="block text-xs font-bold text-slate-700 mb-1">Stock Qty</label>
+                  <input required type="number" name="stock" defaultValue={editingItem?.stock} className="w-full p-2 bg-slate-50 border border-slate-300 rounded-lg focus:ring-2 focus:ring-orange-500 outline-none text-slate-900 placeholder:text-slate-400" />
                 </div>
               </div>
               <button type="submit" className="w-full bg-orange-600 text-white py-3 rounded-lg font-semibold hover:bg-orange-700 transition-colors mt-2">
