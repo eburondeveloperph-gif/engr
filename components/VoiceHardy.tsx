@@ -1,15 +1,15 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { GoogleGenAI, LiveServerMessage, Modality, Type } from '@google/genai';
-import { Mic, MicOff, Volume2, Loader2, X, Camera, CameraOff, GripVertical } from 'lucide-react';
+import { Mic, Loader2, X, Camera, CameraOff, GripVertical, Volume2 } from 'lucide-react';
 import { useStore } from '../context/StoreContext';
 import { base64ToUint8Array, createPcmBlob, decodeAudioData } from '../services/audioUtils';
 import { SYSTEM_INSTRUCTION_HARDY } from '../constants';
 import { supabase } from '../services/supabaseClient';
 
-const API_KEY = process.env.API_KEY || '';
+// Safe access to process.env
+const API_KEY = (typeof process !== 'undefined' && process.env && process.env.API_KEY) || '';
 
 export const VoiceHardy: React.FC = () => {
-  const { inventory, sales, expenses } = useStore(); // We still use context for simple reactive updates if needed
   const [isActive, setIsActive] = useState(false);
   const [isConnecting, setIsConnecting] = useState(false);
   const [volume, setVolume] = useState(0); 
@@ -56,7 +56,6 @@ export const VoiceHardy: React.FC = () => {
         const newX = moveEvent.clientX - dragStartRef.current.x;
         const newY = moveEvent.clientY - dragStartRef.current.y;
         
-        // Simple distance check to differentiate click vs drag
         if (Math.abs(newX - position.x) > 5 || Math.abs(newY - position.y) > 5) {
             setIsDragging(true);
         }
@@ -140,7 +139,7 @@ export const VoiceHardy: React.FC = () => {
   const startFrameCapture = () => {
     if (frameIntervalRef.current) clearInterval(frameIntervalRef.current);
     
-    // Capture 1 frame every second (1 FPS) is usually sufficient for object ID without overloading
+    // Capture 1 frame every second
     frameIntervalRef.current = window.setInterval(() => {
       if (!videoRef.current || !canvasRef.current || !sessionRef.current) return;
       
@@ -151,22 +150,24 @@ export const VoiceHardy: React.FC = () => {
       canvasRef.current.height = videoRef.current.videoHeight;
       ctx.drawImage(videoRef.current, 0, 0);
 
-      const base64Data = canvasRef.current.toDataURL('image/jpeg', 0.6).split(',')[1];
-      
-      sessionRef.current.then((session: any) => {
-        session.sendRealtimeInput({ 
-          media: { 
-            mimeType: 'image/jpeg', 
-            data: base64Data 
-          } 
-        });
-      });
-
+      try {
+          const base64Data = canvasRef.current.toDataURL('image/jpeg', 0.6).split(',')[1];
+          sessionRef.current.then((session: any) => {
+            session.sendRealtimeInput({ 
+              media: { 
+                mimeType: 'image/jpeg', 
+                data: base64Data 
+              } 
+            });
+          });
+      } catch (e) {
+          console.error("Frame capture error", e);
+      }
     }, 1000); 
   };
 
   const connectToGemini = async () => {
-    if (isDragging) return; // Prevent click if dragging
+    if (isDragging) return;
     if (!API_KEY) {
       alert("Please provide a valid API Key in the environment.");
       return;
@@ -186,7 +187,6 @@ export const VoiceHardy: React.FC = () => {
 
       const ai = new GoogleGenAI({ apiKey: API_KEY });
 
-      // Define Tools that query Supabase directly for realtime truth
       const tools = [{
         functionDeclarations: [
           {
@@ -304,7 +304,6 @@ export const VoiceHardy: React.FC = () => {
                  let result = {};
                  
                  try {
-                     // DIRECT DATABASE QUERIES FOR REALTIME CONTEXT
                      if (fc.name === 'getInventorySummary') {
                         const { data } = await supabase.from('products').select('*');
                         if (data) {
@@ -385,11 +384,11 @@ export const VoiceHardy: React.FC = () => {
 
                  sessionPromise.then(session => {
                    session.sendToolResponse({
-                     functionResponses: {
+                     functionResponses: [{
                        id: fc.id,
                        name: fc.name,
                        response: { result },
-                     }
+                     }]
                    });
                  });
               }
@@ -464,7 +463,7 @@ export const VoiceHardy: React.FC = () => {
           <div className="h-8 w-px bg-slate-700 mx-1"></div>
 
           <button 
-            onPointerDown={(e) => e.stopPropagation()} // Prevent dragging when clicking buttons
+            onPointerDown={(e) => e.stopPropagation()} 
             onClick={toggleCamera}
             className={`p-2 rounded-full transition-colors ${isCameraOn ? 'bg-orange-500/20 text-orange-400' : 'bg-slate-800 text-slate-300 hover:text-white'}`}
           >
@@ -472,7 +471,7 @@ export const VoiceHardy: React.FC = () => {
           </button>
 
           <button 
-            onPointerDown={(e) => e.stopPropagation()} // Prevent dragging when clicking buttons
+            onPointerDown={(e) => e.stopPropagation()} 
             onClick={disconnect}
             className="p-2 bg-slate-800 rounded-full hover:bg-red-500/20 text-slate-300 hover:text-red-400 transition-colors"
           >
